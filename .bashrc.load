@@ -6,3 +6,29 @@ export PATH=$PATH:$HOME/bin
 
 ####
 # put any bash customizations in here
+if [ -z "$PS1" ]; then
+   return
+fi
+
+# check the window size after each command and, if necessary,
+# update the values of LINES and COLUMNS.
+shopt -s checkwinsize
+
+# enable programmable completion features (you don't need to enable
+# this, if it's already enabled in /etc/bash.bashrc and /etc/profile
+# sources /etc/bash.bashrc).
+if [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+fi
+
+# set up colors for ls
+if [ -x /usr/bin/dircolors ]; then
+    eval "`dircolors -b`"
+    alias ls='ls --color=auto'
+elif [ `uname -s` = 'Darwin' ]; then
+    export CLICOLOR=1
+fi
+
+export LANG=en_US.UTF-8
+export LOCALE=UTF-8
+export LESSCHARSET='utf-8'
