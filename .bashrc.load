@@ -31,11 +31,11 @@ fi
 export EDITOR='vim'
 export GIT_EDITOR='vim'
 
-if [ $(locale -a | grep "en_US.utf8") = 'en_US.utf8' ]; then
+if [ "$(locale -a | grep 'en_US.utf8')" = 'en_US.utf8' ]; then
     export LANG=en_US.utf8
     export LOCALE=UTF-8
     export LESSCHARSET='utf-8'
-elif [ $(locale -a  | grep "en_US.UTF-8") = 'en_US.UTF-8' ]; then
+elif [ "$(locale -a  | grep 'en_US.UTF-8')" = 'en_US.UTF-8' ]; then
     export LANG=en_US.UTF-8
     export LOCALE=UTF-8
     export LESSCHARSET='utf-8'
