@@ -4,7 +4,7 @@ startup_message off
 vbell off
 defscrollback 10000
 multiuser on
-acladd root,jnaydichev,nate
+acladd root,dbartle
 
 hardstatus on
 hardstatus alwayslastline
