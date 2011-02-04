@@ -22,12 +22,14 @@ if [ -f /etc/bash_completion ]; then
 fi
 
 # set up colors for ls
+export CLICOLOR=1
 if [ -x /usr/bin/dircolors ]; then
     eval "`dircolors -b`"
     alias ls='ls --color=auto'
-elif [ `uname -s` = 'Darwin' ]; then
-    export CLICOLOR=1
 fi
+
+export EDITOR='vim'
+export GIT_EDITOR='vim'
 
 export LANG=en_US.UTF-8
 export LOCALE=UTF-8
