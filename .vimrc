@@ -15,3 +15,7 @@ set matchpairs+=<:>
 
 
 set ruler
+
+if has("mouse")
+    set mouse=a
+endif
