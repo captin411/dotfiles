@@ -31,7 +31,7 @@ fi
 # set up colors for ls
 export CLICOLOR=1
 if [ -x /usr/bin/dircolors ]; then
-    eval "`dircolors -b`"
+    eval "`dircolors -b ~/.dircolors`"
     alias ls='ls --color=auto'
 fi
 
