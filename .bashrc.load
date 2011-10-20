@@ -67,3 +67,6 @@ fi
 
 export PATH MANPATH
 
+# don't table complete files starting with a .
+bind 'set match-hidden-files off' 
+
