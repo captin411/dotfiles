@@ -1,5 +1,6 @@
 au BufNewFile,BufRead *.t setf perl 
 au BufNewFile,BufRead *.mpl setf perl 
+au BufNewFile,BufRead *.applescript setf applescript
 
 au BufNewFile,BufRead *.tpl         call FTCheck_ttdwt()
 au BufNewFile,BufRead *.tt          call FTCheck_ttdwt()
