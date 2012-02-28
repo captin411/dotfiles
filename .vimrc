@@ -1,6 +1,6 @@
 syntax enable
 
-set autoindent
+set textwidth=156
 set textwidth=78
 set backspace=indent,eol,start
 set bg=dark
