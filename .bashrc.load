@@ -29,6 +29,8 @@ if [ -z "$PS1" ]; then
    return
 fi
 
+export PS1="\[\e[36;1m\][\[\e[37;1m\] \u@\h\[\e[36;1m\] ]\[\e[37;1m\] \[\e[36;1m\][$(/sbin/ifconfig | perl -e '$s=join "", <>; $s=~/(\d+\.\d+\.\d+\.\d+)/s; my $ip=$1; if($ip =~ /^172\./) { print "\\[\\e[32;1m\\]VIRTUAL MACHINE"; } else { print "\\[\\e[31;1m\\]PRODUCTION BOX"; } print "\\[\\e[36;1m\\]] [\\[\\e[32;1m\\]$ip"')\[\e[36;1m\]]\n\[\e[36;1m\][ \[\e[37;1m\]\W\[\e[36;1m\] ]-> \[\e[0m\]"
+
 # check the window size after each command and, if necessary,
 # update the values of LINES and COLUMNS.
 shopt -s checkwinsize
