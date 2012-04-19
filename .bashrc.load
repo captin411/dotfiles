@@ -30,10 +30,21 @@ if [ -z "$PS1" ]; then
 fi
 
 if [ "$SUDO_USER" != '' ]; then
-    export PS1="\[\e[36;1m\][\[\e[37;1m\] \[\e[37;1;41m\]\u\[\e[0m\]\[\e[37;1m\]@\h\[\e[36;1m\] ]\[\e[37;1m\] \[\e[36;1m\][$(/sbin/ifconfig | perl -e '$s=join "", <>; $s=~/(\d+\.\d+\.\d+\.\d+)/s; my $ip=$1; if($ip =~ /^172\./) { print "\\[\\e[32;1m\\]VM"; } else { print "\\[\\e[31;1m\\]PRODUCTION"; } print "\\[\\e[36;1m\\]] [\\[\\e[32;1m\\]$ip"')\[\e[36;1m\]]\n\[\e[36;1m\][ \W\[\e[36;1m\] ]-> \[\e[0m\]"
+    PS1="\[\e[36;1m\][\[\e[37;1m\] \[\e[37;1;41m\]\u\[\e[0m\]\[\e[37;1m\]@\h\[\e[36;1m\] ]\[\e[37;1m\] \[\e[36;1m\][$(/sbin/ifconfig | perl -e '$s=join "", <>; $s=~/(\d+\.\d+\.\d+\.\d+)/s; my $ip=$1; if($ip =~ /^172\./) { print "\\[\\e[32;1m\\]VM"; } else { print "\\[\\e[31;1m\\]PRODCTION"; } print "\\[\\e[36;1m\\]] [\\[\\e[32;1m\\]$ip"')\[\e[36;1m\]]\n\[\e[36;1m\][ \W\[\e[36;1m\] ]-> \[\e[0m\]"
 else
-    export PS1="\[\e[36;1m\][\[\e[37;1m\] \u@\h\[\e[36;1m\] ]\[\e[37;1m\] \[\e[36;1m\][$(/sbin/ifconfig | perl -e '$s=join "", <>; $s=~/(\d+\.\d+\.\d+\.\d+)/s; my $ip=$1; if($ip =~ /^172\./) { print "\\[\\e[32;1m\\]VM"; } else { print "\\[\\e[31;1m\\]PRODUCTION"; } print "\\[\\e[36;1m\\]] [\\[\\e[32;1m\\]$ip"')\[\e[36;1m\]]\n\[\e[36;1m\][ \W\[\e[36;1m\] ]-> \[\e[0m\]"
+    PS1="\[\e[36;1m\][\[\e[37;1m\] \u@\h\[\e[36;1m\] ]\[\e[37;1m\] \[\e[36;1m\][$(/sbin/ifconfig | perl -e '$s=join "", <>; $s=~/(\d+\.\d+\.\d+\.\d+)/s; my $ip=$1; if($ip =~ /^172\./) { print "\\[\\e[32;1m\\]VM"; } else { print "\\[\\e[31;1m\\]PRODUCTION"; } print "\\[\\e[36;1m\\]] [\\[\\e[32;1m\\]$ip"')\[\e[36;1m\]]\n\[\e[36;1m\][ \W\[\e[36;1m\] ]-> \[\e[0m\]"
 fi
+
+# If this is an xterm set the title to user@host:dir
+case "$TERM" in
+xterm*|rxvt*)
+    PS1="\[\e]0;\h: \w\a\]$PS1"
+    ;;
+*)
+    ;;
+esac
+
+export PS1
 
 
 # check the window size after each command and, if necessary,
