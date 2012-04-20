@@ -21,7 +21,7 @@ if [ -d "/Applications/android-sdk-mac_x86/platform-tools" ]; then
    PATH=$PATH:/Applications/android-sdk-mac_x86/platform-tools
 fi
 
-# add this to the .bashrc: . $HOME/.bashrc.load
+alias myip='/sbin/ifconfig | grep "inet " | grep -v "127.0.0.1" | head -n1 | grep -o "[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*" | head -n1'
 
 ####
 # put any bash customizations in here
@@ -29,10 +29,12 @@ if [ -z "$PS1" ]; then
    return
 fi
 
+PROMPT_DIRTRIM=3;
+
 if [ "$SUDO_USER" != '' ]; then
-    PS1="\[\e[36;1m\][\[\e[37;1m\] \[\e[37;1;41m\]\u\[\e[0m\]\[\e[37;1m\]@\h\[\e[36;1m\] ]\[\e[37;1m\] \[\e[36;1m\][$(/sbin/ifconfig | perl -e '$s=join "", <>; $s=~/(\d+\.\d+\.\d+\.\d+)/s; my $ip=$1; if($ip =~ /^172\./) { print "\\[\\e[32;1m\\]VM"; } else { print "\\[\\e[31;1m\\]PRODCTION"; } print "\\[\\e[36;1m\\]] [\\[\\e[32;1m\\]$ip"')\[\e[36;1m\]]\n\[\e[36;1m\][ \W\[\e[36;1m\] ]-> \[\e[0m\]"
+    PS1="\[\e[36;1m\][\[\e[37;1m\] \[\e[37;1;41m\]\u\[\e[0m\]\[\e[37;1m\]@\h\[\e[36;1m\] ]\[\e[37;1m\] \[\e[36;1m\][$(myip | perl -e 'my ($ip)=<>; if($ip =~ /^172\./) { print "\\[\\e[32;1m\\]VM"; } else { print "\\[\\e[31;1m\\]PRODCTION"; } print "\\[\\e[36;1m\\]] [\\[\\e[32;1m\\]$ip"')\[\e[36;1m\]]\n\[\e[36;1m\][ \w\[\e[36;1m\] ]-> \[\e[0m\]"
 else
-    PS1="\[\e[36;1m\][\[\e[37;1m\] \u@\h\[\e[36;1m\] ]\[\e[37;1m\] \[\e[36;1m\][$(/sbin/ifconfig | perl -e '$s=join "", <>; $s=~/(\d+\.\d+\.\d+\.\d+)/s; my $ip=$1; if($ip =~ /^172\./) { print "\\[\\e[32;1m\\]VM"; } else { print "\\[\\e[31;1m\\]PRODUCTION"; } print "\\[\\e[36;1m\\]] [\\[\\e[32;1m\\]$ip"')\[\e[36;1m\]]\n\[\e[36;1m\][ \W\[\e[36;1m\] ]-> \[\e[0m\]"
+    PS1="\[\e[36;1m\][\[\e[37;1m\] \u@\h\[\e[36;1m\] ]\[\e[37;1m\] \[\e[36;1m\][$(myip | perl -e 'my ($ip)=<>; if($ip =~ /^172\./) { print "\\[\\e[32;1m\\]VM"; } else { print "\\[\\e[31;1m\\]PRODUCTION"; } print "\\[\\e[36;1m\\]] [\\[\\e[32;1m\\]$ip"')\[\e[36;1m\]]\n\[\e[36;1m\][ \w\[\e[36;1m\] ]-> \[\e[0m\]"
 fi
 
 # If this is an xterm set the title to user@host:dir
