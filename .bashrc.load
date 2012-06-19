@@ -85,6 +85,8 @@ else
     export LESSCHARSET='utf-8'
 fi
 
+PERL_LL="perl -Mlocal::lib"
+$PERL_LL -e '1;' 2>/dev/null && eval $($PERL_LL) && echo "using perl local lib"
 export PATH MANPATH
 
 # don't table complete files starting with a .
