@@ -85,7 +85,7 @@ else
     export LESSCHARSET='utf-8'
 fi
 
-PERL_LL="perl -I ~/perl5/lib/perl5 -Mlocal::lib"
+PERL_LL="perl -I $HOME/perl5/lib/perl5 -Mlocal::lib"
 $PERL_LL -e '1;' 2>/dev/null && eval $($PERL_LL) && echo "using perl local lib"
 export PATH MANPATH
 
