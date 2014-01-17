@@ -1,7 +1,6 @@
 syntax enable
 
 set textwidth=156
-set textwidth=78
 set backspace=indent,eol,start
 set bg=dark
 colorscheme solarized
@@ -14,5 +13,6 @@ set number
 
 set matchpairs+=<:>
 
+filetype indent plugin on
 
 set ruler
