@@ -1,4 +1,6 @@
-syntax enable
+syntax on
+
+set runtimepath^=~/.vim/bundle/ctrlp.vim
 
 set textwidth=156
 set backspace=indent,eol,start
@@ -16,3 +18,5 @@ set matchpairs+=<:>
 filetype indent plugin on
 
 set ruler
+
+call pathogen#infect()
