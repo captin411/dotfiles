@@ -1,0 +1,102 @@
+#!/bin/bash
+
+REPOS_YML='/etc/puppet/var_dev/mt_repo_config/repos.yml'
+SUDO_CMD=$(which sudo)
+PERL_CMD=$(which perl)
+PRUN_CMD='/opt/mt/bin/prun'
+YAML_MOD='YAML'
+
+echo_err() {
+    echo "$@" 1>&2;
+}
+
+write_repos() {
+    if [ "$SUDO_CMD" == "" ]; then
+        echo_err You must have sudo installed to use prun
+        exit 1;
+    fi
+
+    if [ ! -x $PRUN_CMD ]; then
+        echo_err You must have $PRUN_CMD installed
+        exit 1;
+    fi
+
+    $SUDO_CMD $PRUN_CMD mt_repo_config::easy -r
+}
+
+usage() {
+    echo "git repo list"
+    echo "git repo add YOUR-PROJECT-NAME"
+    echo "git repo rm PROJECT-SUBSTRING"
+    echo "git repo prun"
+    echo "git repo help"
+    exit 1
+}
+
+if [ "$PERL_CMD" == "" ]; then
+    echo_err Could not find perl binary
+    exit 1;
+fi
+
+if [ ! -e $REPOS_YML ]; then
+    echo_err No repos yml exists on this system. The expected path is:
+    echo_err $REPOS_YML
+    exit 1;
+fi
+
+if [ ! -w $REPOS_YML ]; then
+    if [ "$SUDO_CMD" == "" ]; then
+        echo_err Could not find sudo binary and you need write permission
+        echo_err to the YML file $REPOS_YML
+        exit 1;
+    fi
+    FULL_PERL_CMD="$SUDO_CMD $PERL_CMD -M$YAML_MOD"
+else
+    FULL_PERL_CMD="$PERL_CMD -M$YAML_MOD"
+fi
+
+$PERL_CMD -M$YAML_MOD -e '1;' 1>/dev/null 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo_err Could not load the perl module "'$YAML_MOD'".  You will need to install this.
+fi
+
+if [ "$1" == "repo" ]; then
+    # allow for manually running this command w/o git
+    shift
+fi
+
+case "$1" in
+    "help")
+        usage
+        ;;
+    "list")
+        $FULL_PERL_CMD -e 'print "$_\n" foreach @{YAML::LoadFile(shift)->{projects}};' $REPOS_YML
+        ;;
+    "add")
+        if [ "$2" == "" ]; then
+            usage
+        fi
+        $FULL_PERL_CMD -e '$f=shift; $p=shift; $c=YAML::LoadFile($f); push @{$c->{projects}},$p; YAML::DumpFile($f,$c);' $REPOS_YML $2
+        write_repos
+        ;;
+    "rm")
+        if [ "$2" == "" ]; then
+            usage
+        fi
+        $FULL_PERL_CMD -e '$f=shift; $p=shift; $c=YAML::LoadFile($f); if(!$p) { exit; } @new = grep !/$p/, @{$c->{projects}}; $c->{projects} = \@new; YAML::DumpFile($f,$c);' $REPOS_YML $2
+        write_repos
+        ;;
+    "prun")
+        write_repos
+        ;;
+    * )
+        usage
+        ;;
+esac
+
+exit 0
+
+
+
+
+
