@@ -1,0 +1,843 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long qw/GetOptionsFromArray/;
+use Pod::Usage;
+
+my $DAY_SECONDS = 24 * 60 * 60;
+my $DEV_HOSTS   = [
+    qw/
+        dev01.mtsvc.net
+        dev02.mtsvc.net
+        dev03.mtsvc.net
+        dev04.mtsvc.net
+        dev05.mtsvc.net
+        dev06.mtsvc.net
+        dev07.mtsvc.net
+        dev08.mtsvc.net
+        dev09.mtsvc.net
+        dev10.mtsvc.net
+        dev11.mtsvc.net
+        dev12.mtsvc.net
+        /
+];
+
+my @VISAGE_COMMANDS = qw/create destroy start stop/;
+
+# note: these two vars are used by the MT::Visage::Virtstats package below,
+# and are checked against versions returned from virtstats on the dev boxes
+
+# Which version of virtstats are we compatible with?  Version mismatches here
+# are fatal
+our $VIRTSTATS_COMPAT_VERSION = 1;
+
+# Use this to determine if 'mtd' needs to be upgraded.  Version mismatches here
+# should just trigger a warning.
+our $MTD_VERSION = 1;
+
+my $tmux_panes_created = 0;
+
+run(@ARGV) if not defined caller;
+
+sub run {
+    my @args = @_;
+
+    #
+    # If we're forwarding a visage command to a dev box, do that and skip the rest
+    # of command line parsing
+    #
+    if ( $args[0] && grep { $_ eq $args[0] } @VISAGE_COMMANDS ) {
+        run_visage_command(@args);
+        exit;    # run_visage_command exec's so it shouldn't actually return, but just in case
+    }
+
+    my %options;
+    my $opts_ok = GetOptionsFromArray(
+        \@args,   \%options,  'all',       'login=s',
+        'file=s', 'Xforward', 'rotate',    'web:s',
+        'vz',     'ssl:s',    'command=s', 'quota',
+        'help|?', 'man',      'tmux',      'whichone',
+        'whichone-simple'
+    );
+
+    pod2usage(2) if !$opts_ok;
+    pod2usage(1) if exists $options{help};
+    pod2usage( -exitstatus => 0, -verbose => 2 ) if exists $options{man};
+
+    if ( $0 =~ /mtv/ ) {
+        $options{vz} = 1;
+    }
+
+    my @filters = @args;
+
+    if ( $options{help} ) {
+        print <<USAGE;
+USAGE
+        exit;
+    }
+
+    if ( $options{whichone} || $options{'whichone-simple'} ) {
+        my %opts = ();
+        $opts{simple} = $options{'whichone-simple'};
+        MT::Visage::Virtstats::print_perf_info(%opts);
+        exit(0);
+    }
+
+    # if ssl is specified and web isn't, manually set web
+    if ( defined( $options{ssl} ) && !defined $options{web} ) {
+        $options{web} = $options{ssl};
+    }
+
+    if ( $options{tmux} && !$ENV{TMUX} ) {
+        die "Unable to do tmux actions without being inside tmux.\n";
+    }
+
+    my @matches = get_filtered_hosts( \%options, @filters );
+
+    if ( scalar @matches == 1 ) {
+
+        do_host( \%options, $matches[0] );
+    }
+    elsif ( scalar @matches == 0 ) {
+        print "Didn't match any hosts.\n";
+
+    }
+    else {
+        if ( $options{rotate} ) {
+            print "Rotating through hosts:\n  ", join( "\n  ", @matches ), "\n";
+            foreach my $match (@matches) {
+                do_host( \%options, $match);
+            }
+
+            if ( $options{tmux} ) {
+                system('tmux select-layout even-horizontal');
+            }
+        }
+        else {
+            print "Multiple hosts matched:\n  ", join( "\n  ", @matches ),
+                "\n\nTo connect, provide additional search terms.\n";
+        }
+    }
+
+    exit;
+}
+
+#### subs #################################################################
+#### subs #################################################################
+#### subs #################################################################
+
+sub get_filtered_hosts {
+    my $options = shift;
+    my @filters = @_;
+
+    # This is a string of all hosts as follows:
+    #
+    # $ip1 $vmname1.devXX
+    # $ip2 $vmname2.devXX
+    # ##shutff $vmname3.devXX
+    # ...
+    #
+    my $available_hosts;
+    if ( $options->{vz} ) {
+        $available_hosts = `sudo /usr/sbin/vzlist -H -s hostname`;
+    }
+    else {
+        $available_hosts = get_visage_hosts_string();
+    }
+
+    my @hosts = split( /\n/, $available_hosts );
+
+    my @matches = @hosts;
+
+    if ( !$options->{vz} ) {
+        unshift @filters, qr/dev/i          if !$options->{all};
+        unshift @filters, qr/\s$ENV{USER}/i if !$options->{all};
+    }
+
+    foreach my $filter (@filters) {
+        if ( $filter =~ s/^\^// ) {
+            @matches = grep { $_ !~ $filter } @matches;
+        }
+        else {
+            @matches = grep { $_ =~ $filter } @matches;
+        }
+    }
+
+    return @matches;
+}
+
+sub do_host {
+    my $opts_ref = shift;
+    my $match    = shift;
+
+    my %options = %{$opts_ref};
+
+    my ( $id, $ip, $hostname );
+
+    if ( $options{vz} ) {
+        ( $id, $ip, $hostname ) = ( split( /\s+/, $match ) )[ 1, 4, 5 ];
+    }
+    else {
+        ( $ip, $hostname ) = split( /\s+/, $match );
+    }
+
+    print "Host $hostname:\n" if $options{rotate};
+
+    die "Unable to connect to $hostname, the VM is shut off.\n" if $ip =~ /shutoff/;
+
+    my @cmd;
+    if ( defined( $options{web} ) ) {
+        if ( $options{vz} ) {
+            print "ERROR: web doesn't work for vz\n";
+            return;
+        }
+        else {
+            my $url = sprintf( '%s://%s/%s',
+                defined( $options{ssl} ) ? 'https' : 'http',
+                $ip, $options{web} );
+
+            if ( $^O eq 'darwin' ) {
+                print "Opening $hostname ($ip) in web browser...\n";
+                @cmd = ( '/usr/bin/open', $url );
+            }
+            else {
+                print STDERR "Unable to open URL, just printing...\n";
+                print "$url\n";
+            }
+
+        }
+    }
+    elsif ( $options{file} ) {
+        if ( $options{vz} ) {
+            print "ERROR: file doesn't work for vz (yet)\n";
+            return;
+        }
+        print "Sending '$options{file}' to $hostname ($ip)...\n";
+        @cmd = (
+            '/usr/bin/scp', '-r', "'$options{file}'",
+            sprintf( '%s@%s:', $options{login} ? $options{login} : $ENV{USER}, $ip )
+        );
+    }
+    elsif ( $options{quota} ) {
+        if ( $options{vz} ) {
+            @cmd = ( 'sudo', '/usr/sbin/vzquota', 'stat', $id );
+        }
+        else {
+            print "ERROR: quota doesn't work for ssh (yet)\n";
+            return;
+        }
+    }
+    elsif ( $options{command} ) {
+        if ( $options{vz} ) {
+            @cmd = ( 'sudo', '/usr/sbin/vzctl', 'exec', $id, "'$options{command}'" );
+        }
+        else {
+            @cmd = ( '/usr/bin/ssh', $ip );
+            if ( $options{login} ) {
+                push @cmd, "-l", $options{login};
+            }
+            push @cmd, "-t";
+            push @cmd, $options{command};
+        }
+    }
+    else {
+        if ( $options{vz} ) {
+            print "Connecting to $hostname ($ip)...\n";
+            @cmd = ( 'sudo', '/usr/sbin/vzctl', 'enter', $id );
+        }
+        else {
+            print "Connecting to $hostname ($ip)...\n";
+            @cmd = ( '/usr/bin/ssh', $ip );
+            if ( $options{login} ) {
+                push @cmd, "-l", $options{login};
+            }
+            if ( $options{Xforward} ) {
+                push @cmd, "-X";
+            }
+        }
+    }
+
+    if ( $options{tmux} ) {
+        if ( $tmux_panes_created == 0 ) {
+            @cmd = ( qw(tmux new-window), join( ' ', @cmd ) );
+        }
+        else {
+            @cmd = ( qw(tmux split-window -h), join( ' ', @cmd ) );
+        }
+        $tmux_panes_created++;
+    }
+    system(@cmd);
+
+    print
+        "----------------------------------------------------------------------------------------------------\n"
+        if $options{rotate};
+}
+
+sub get_visage_hosts_string {
+
+    my @vms = MT::Visage::Virtstats::get_vms();
+
+    my $str = '';
+
+    foreach my $vm (@vms) {
+        if ( $vm->{running} ) {
+            $str .= $vm->{ip};
+        }
+        else {
+            $str .= "##shutoff";
+        }
+
+        $str .= ' ';
+
+        $str .= $vm->{name};
+        $str .= '.';
+        $vm->{host} =~ s/\.mtsvc\.net//;
+        $str .= $vm->{host};
+        $str .= "\n";
+    }
+
+    return $str;
+}
+
+sub run_visage_command {
+    my @args = @_;
+
+    my $vsgcmd = $args[0] || die "no cmd passed to run_visage_command";
+
+    if ( scalar(@args) < 3 ) {
+        die "Not enough args passed for $vsgcmd\n";
+    }
+
+    if ( !grep { $_ eq $vsgcmd } @VISAGE_COMMANDS ) {
+        die "not recognized vsg cmd: $vsgcmd"
+    }
+
+    #
+    # To run the 'visage create' command, we just need to find the best dev box
+    # and hand over all the args to visage
+    #
+    if ( $vsgcmd eq 'create' ) {
+
+        print "Finding best dev box...\n";
+
+        my $host = MT::Visage::Virtstats::get_best_candidate();
+
+        if ( !$host ) {
+            die "Unable to find a suitable dev box to run your command";
+        }
+
+        print "Running command '" . join( ' ', 'visage', @args ) . "' on $host\n";
+
+        # Suppress warning about low resources, in the off chance that between
+        # selecting the best host and running this command the host crosses the
+        # threshold to be considered "bad"
+        push( @args, "--no-resource-check" );
+
+        exec( 'ssh', $host, '/opt/mt/bin/visage', @args ) or die "Unable to run ssh: $!\n";
+    }
+
+    #
+    # For start/stop/destroy, we need to figure out if it's a machine or a cluster, and
+    # make sure we're matching the exactly one of either, then run the
+    # appropriate visage command on the correct dev box.
+    #
+    else {
+        if ( $args[1] eq 'machine' ) {
+            my $machine = $args[2];
+            my @vm_hosts = get_filtered_hosts( {}, "-${machine}.dev" );
+
+            if ( !@vm_hosts ) {
+                print STDERR "Sorry, no machine found matching $machine\n";
+                print STDERR "Unable to run visage $vsgcmd command\n";
+                exit(1);
+            }
+            elsif ( scalar(@vm_hosts) > 1 ) {
+                print STDERR "Too many hosts matched:\n";
+                print STDERR " - $_\n" for (@vm_hosts);
+                print STDERR "Unable to run visage $vsgcmd command\n";
+                exit(1);
+            }
+            else {
+                my ( $ip, $vm_host ) = split( /\s+/, $vm_hosts[0] );
+
+                my ($dev_box) = $vm_host =~ /\.(dev\d\d)$/;
+
+                die "No valid dev box found in host name $vm_host" if !$dev_box;
+
+                $dev_box .= '.mtsvc.net';
+
+                my ($vm_name) = $vm_host =~ /^(.+)\.dev\d\d$/;
+
+                print "${vsgcmd}ing machine $vm_name on $dev_box\n";
+                exec( 'ssh', $dev_box, '/opt/mt/bin/visage', $vsgcmd, 'machine', $vm_name,
+                    '--global' )
+                    or die "Can't exec ssh: $!";
+            }
+        }
+        elsif ( $args[1] eq 'cluster' ) {
+            my $cluster = $args[2];
+
+            my @vm_hosts
+                = grep { $_ =~ /--${cluster}\.dev\d\d$/ } get_filtered_hosts( {}, "--${cluster}" );
+
+            if ( !@vm_hosts ) {
+                print STDERR "No hosts matching cluster $cluster found\n";
+                print STDERR "Unable to run visage $vsgcmd command\n";
+                exit(1);
+            }
+
+            my %dev_boxes = map { my ($d) = $_ =~ /\.(dev\d\d)/; $d => 1 } @vm_hosts;
+
+            if ( scalar( keys %dev_boxes ) > 1 ) {
+                print STDERR
+                    "Matching clusters with this name ($cluster) found on multiple dev boxes:\n";
+                print STDERR "  - $_\n" foreach ( keys %dev_boxes );
+                print STDERR "Please manually delete duplicate clusters and try again\n";
+                print STDERR "Unable to run visage $vsgcmd command\n";
+                exit(1);
+            }
+            my $dev_box = ( keys %dev_boxes )[0];
+            $dev_box .= '.mtsvc.net';
+
+            print "${vsgcmd}ing cluster $cluster on $dev_box\n";
+            exec( 'ssh', $dev_box, '/opt/mt/bin/visage', $vsgcmd, 'cluster', $cluster )
+                or die "Can't exec ssh: $!";
+        }
+        else {
+            die "Don't know how to 'visage $vsgcmd' a " . $args[1];
+        }
+    }
+}
+
+=head1 NAME
+
+mtd - Jump to a (mt) dev VM or run a visage command.
+
+=head1 SYNOPSIS
+
+mtd serves two purposes - it facilitates connecting to the dev VMs in Visage
+and managing them.
+
+When conencting to or running commands on dev VMs, the VMs are selected with
+short filters.  By default the currently logged in user is the first filter, to
+ease connecting to your own VMs.
+
+When running visage commands, the best or most appropriate dev box will be
+choosen for you.
+
+By default, mtd will SSH to the selected VM.  Other actions can be specified
+with options.
+
+ $ mtd create ...
+
+     This will run 'visage' on the least-loaded dev box and pass along all the
+     arguemtns, which whould be regular visage args.
+
+     ex:
+
+     $ mtd create cluster PROJ-123-my-cluster -l ac
+     $ mtd create machine MyMachine --image centos_7_amd64
+
+ $ mtd < start | stop | destroy > < machine | cluster > $name
+
+     This will run the specified visage command on the dev box where the machine or
+     cluster lives.
+
+     ex:
+
+     $ mtd destroy cluster PROJ-123-my-cluster
+     $ mtd stop machine MyMachine
+     $ mtd start cluster PROJ-234-my-other-cluster
+
+ $ mtd [options] <filters>
+
+ Options:
+  -a|--all            Search in all VMs, not just those with \$USER in them.
+  --whichone          Print a list of dev boxes, sorted by performance recommendation
+  --whichone-simple   Prints same list as --whichone, but without any extra info
+  -c|--command        Run the specified command instead of logging in.
+  -l|--login <login>  Use a different username.
+  -f|--file <file>    Copies the specified file to the vm with scp.
+  -X|--Xforward       Add X11 forwarding.
+  -r|--rotate         Operate on each of the returned hosts in turn rather than
+                      showing a list.
+  -w|--web [path]     Open web browser to the host.  Optional path will be
+                      appended to URL.
+  -s|--ssl            Use SSL on web browser connections. (implies --web)
+  -t|--tmux           Open ssh connections in new tmux windows.
+  -v|--vz             Look in 'vzlist -a' instead of /etc/hosts.
+  -q|--quota          Show quota usage for each host. Only works with virtuozzo.
+
+  <filters>           Strings to match somewhere in the name of the VM.  Only
+                      those VMs that contain all strings will be considered.
+                      If more than one matches all filters, then an error is
+                      displayed and all are listed.
+
+ Documentation options:
+  -h --help -?              brief help message
+     --man                  full documentation
+
+=head1 REQUIRED ARGUMENTS
+
+No arguments are required, but you will likely match too many hosts without
+specifying some filter.
+
+=head1 DESCRIPTION
+
+This script facilitates working with the dev VMs in Visage.  It is used mainly
+to filter the list of VMs down to the one you want to connect to.  That is done
+by specifying filters.  You can add as many filters as you need in order to
+narrow the list down.
+
+=head1 EXAMPLE
+
+Assuming the current logged in user is 'nate' and the list of VMs in Visage is:
+
+    172.17.2.58      nate-centos1.dev02
+    172.17.2.139     nate-devci01--PLAT-53.dev02
+    172.17.2.55      nate-devmtp--PLAT-53.dev02
+    172.17.2.101     nate-devrepo--PLAT-53.dev02
+    172.17.2.165     nate-devsvn--PLAT-53.dev02
+    172.17.2.60      nate-getvar.dev02
+    172.17.2.252     pbrinkmann-devci01--plat53.dev02
+
+The result of running each of the following commands:
+
+    $ mtd ci
+    # Select the nate-devci01--PLAT-53.dev02 VM and ssh to it.
+
+    $ mtd cent -l root
+    # Select the nate-centos1.dev02 VM and ssh to it as root.
+
+    $ mtd -a ci
+    Matched too many hosts:
+        172.17.2.139     nate-devci01--PLAT-53.dev02
+        172.17.2.252     pbrinkmann-devci01--plat53.dev02
+
+    $ mtd -a ci pb
+    # Select the pbrinkmann-devci01--plat53.dev02 and ssh to it.
+
+    $ mtd PLAT-53
+    Matched too many hosts:
+        172.17.2.139     nate-devci01--PLAT-53.dev02
+        172.17.2.55      nate-devmtp--PLAT-53.dev02
+        172.17.2.101     nate-devrepo--PLAT-53.dev02
+        172.17.2.165     nate-devsvn--PLAT-53.dev02
+
+    $ mtd PLAT-53 -r
+    # SSH to nate-devci01--PLAT-53.dev02, and then
+    # SSH to nate-devmtp--PLAT-53.dev02, and then
+    # SSH to nate-devrepo--PLAT-53.dev02, and then
+    # SSH to nate-devsvn--PLAT-53.dev02
+
+=head1 AUTHOR
+
+Nate Jones E<lt>nate@mediatemple.netE<gt>
+and paul
+
+=cut
+
+package MT::Visage::Virtstats;
+
+use warnings;
+use strict;
+
+use Exporter 'import';
+our @EXPORT_OK = qw/get_sorted_hosts get_vms print_perf_info/;
+
+use IO::Socket::INET;
+use YAML;
+
+## Returns an array with one entry per VM as a hashref with keys 'name' 'running' 'host' 'ip'
+sub get_vms {
+    my %hosts = _get_remote_yaml();
+
+    my @vms;
+
+    foreach my $host ( sort keys %hosts ) {
+        my $hostdata = $hosts{$host};
+        foreach ( @{ $hostdata->{'running domains'} } ) {
+            my %h      = %{$_};
+            my $vmname = ( keys %h )[0];
+            my $vmip   = $h{$vmname};
+
+            push( @vms, { name => $vmname, 'running' => 1, host => $host, ip => $vmip } );
+        }
+        foreach my $vmname ( @{ $hostdata->{'stopped domains'} } ) {
+            push( @vms, { name => $vmname, 'running' => 0, host => $host, ip => 'n/a' } );
+        }
+    }
+
+    return @vms;
+}
+
+sub _get_filtered_hosts_with_perf_scores {
+    my $excluded = shift;
+
+    my %perf_attrs = (
+        'num running domains' => { total => 0, want => 'small' },
+        'load5min'            => { total => 0, want => 'small' },
+        'free ram (mb)'       => { total => 0, want => 'large' },
+    );
+
+    my %hosts       = _get_remote_yaml();
+    my %saved_hosts = ();
+
+    foreach my $host ( keys %hosts ) {
+        my $hostdata = $hosts{$host};
+
+        if ( $hostdata->{'free disk (mb)'} < 25000 ) {
+            push( @{$excluded}, "$host excluded: disk threshold exceeded\n" );
+            next;
+        }
+
+        if ( $hostdata->{'num running domains'} > 32 ) {
+            push( @{$excluded}, "$host excluded: too many running VMs\n" );
+            next;
+        }
+
+        if ( $hostdata->{'free ram (mb)'} < 7500 ) {
+            push( @{$excluded}, "$host excluded: free memory threshold exceeded\n" );
+            next;
+        }
+
+        if ( $hostdata->{'load1min'} / $hostdata->{'nprocs'} > 2 ) {
+            push( @{$excluded}, "$host excluded: load threshold exceeded\n" );
+            next;
+        }
+
+        foreach my $attr ( keys %perf_attrs ) {
+            my $mine = $hostdata->{$attr};
+            $perf_attrs{$attr}->{total} += $mine;
+        }
+
+        $saved_hosts{$host} = $hostdata;
+    }
+
+    _calc_perf_scores( \%saved_hosts, \%perf_attrs );
+
+    return %saved_hosts;
+}
+
+sub get_sorted_hosts {
+    my $excluded = shift
+        || []
+        ;    # optionally an array ref, gets populated with list of "host excluded because..." msgs
+
+    my %hosts = _get_filtered_hosts_with_perf_scores($excluded);
+
+    # Insert 'name' key in each host object
+    $hosts{$_}->{'name'} = $_ foreach ( keys %hosts );
+
+    my @sorted_hosts = map { $hosts{$_} } sort { _perfsort( \%hosts, $a, $b ) } keys %hosts;
+
+    return @sorted_hosts;
+}
+
+## Prints a list of hosts sorted by peformance stats
+sub print_perf_info {
+    my %opts = @_;
+
+    my @excluded;
+    my @sorted_hosts = get_sorted_hosts( \@excluded );
+
+    if ( $opts{simple} ) {
+        print $_->{'name'} . "\n" foreach (@sorted_hosts);
+    }
+    else {
+        print "\nSorted in order of best (top) => worst (bottom)\n\n";
+
+        my $i = 1;
+        printf(
+            "#%2d [%.2f] %s #vms: %2d (%.2f) load: %.2f (%.2f) ram: %d (%.2f)\n",
+            $i++,                              $_->{'_perfscore'},
+            $_->{'name'},                      $_->{'num running domains'},
+            $_->{'num running domains_score'}, $_->{'load5min'},
+            $_->{'load5min_score'},            $_->{'free ram (mb)'},
+            $_->{'free ram (mb)_score'}
+        ) foreach (@sorted_hosts);
+
+        if (@excluded) {
+            print "\n--\n\n";
+            print $_ foreach ( sort @excluded );
+        }
+    }
+}
+
+sub get_best_candidate {
+    my %hosts = _get_filtered_hosts_with_perf_scores();
+
+    return unless %hosts;
+
+    my @sorted_hostnames = sort { _perfsort( \%hosts, $a, $b ) } keys %hosts;
+
+    return $sorted_hostnames[0];
+}
+
+##########
+##########
+##########
+##########
+##########
+##########
+##########
+
+## Returns a hash of the loaded YAML object from each host with the key as the hostname
+#
+#running domains:
+#  - dhenderson-c6_after : ip
+#  - dhenderson-c6_before : ip
+#stopped domains:
+#  - pbrinkmann-hostops--baseac
+#  - pbrinkmann-semaphore--baseac
+#  - pbrinkmann-accountcenter--baseac
+#num running domains: 5
+#load1min: 0.04
+#load5min: 0.08
+#load15min: 0.05
+#nprocs: 8
+#free disk (mb): 332328
+#free ram (mb): 30000
+##
+sub _get_remote_yaml {
+    my %results = ();
+
+    my @DEV_BOX_NUMS = ( 1 .. 12 );
+
+    foreach my $n (@DEV_BOX_NUMS) {
+
+        my $host = sprintf "dev%02d.mtsvc.net", $n;
+        my $sock = IO::Socket::INET->new("$host:17353");
+
+        if ( !$sock ) {
+            warn "Unable to connect to $host, skipping\n";
+            next;
+        }
+
+        my $yaml = join( "", <$sock> );
+
+        my $data = Load($yaml);
+
+        $results{$host} = $data;
+    }
+
+    _do_version_check(%results);
+
+    return %results;
+}
+
+# Are we compatible with virtstats or has there been a new mtd release?
+sub _do_version_check {
+    my %results = @_;
+
+    return if !%results;
+
+    # Check virtstats version - this is fatal if mismatched
+    my $remote_virtstats_version = ( values %results )[0]->{'virtstats version'};
+    if ( !$remote_virtstats_version ) {
+        warn "mtd's MT::Visage::Virtstats was unable to retrieve a remote virtstats version";
+    }
+    elsif ( $remote_virtstats_version != $VIRTSTATS_COMPAT_VERSION ) {
+        die
+            "You need to upgrade mtd!\nThe remote virtstats daemon reported version $remote_virtstats_version, but we're only compatible with version $VIRTSTATS_COMPAT_VERSION\n";
+    }
+
+    # Check mtd version - this is a friendly reminder to ugprade if mismatched
+    my $remote_mtd_version = ( values %results )[0]->{'mtd version'};
+    if ( !$remote_mtd_version ) {
+        warn "mtd's MT::Visage::Virtstats was unable to retrieve a remote mtd version";
+    }
+    elsif ( $remote_mtd_version != $MTD_VERSION ) {
+        warn "It looks like there's a new version of mtd, you should consider upgrading!\n\n";
+        sleep(1);
+    }
+}
+
+sub _perfsort {
+    my $hosts = shift;
+    my $a     = shift;
+    my $b     = shift;
+
+    return $hosts->{$b}->{'_perfscore'} <=> $hosts->{$a}->{'_perfscore'};
+}
+
+sub _calc_perf_scores {
+    my $hosts      = shift;
+    my $perf_attrs = shift;
+
+    foreach my $host ( keys %{$hosts} ) {
+        my $score = 0;
+
+        foreach my $attr ( keys %{$perf_attrs} ) {
+            my $a      = $perf_attrs->{$attr};
+            my $total  = $a->{total};
+            my $val    = $hosts->{$host}->{$attr};
+            my $my_pct = $val / $total;
+
+            my $attr_score;
+            if ( $a->{'want'} eq 'large' ) {
+                $attr_score += $my_pct;
+            }
+            else {
+                $attr_score += 1 - $my_pct;
+            }
+
+            $score += $attr_score;
+            $hosts->{$host}->{ $attr . "_score" } = $attr_score;
+        }
+
+        $hosts->{$host}->{'_perfscore'} = $score;
+    }
+}
+
+=head1 NAME
+
+MT::Visage::Virtstats - Enables querying VISAGE boxes for stats
+
+=head1 SYNOPSIS
+
+    use MT:Visage::Virtstats;
+
+    ## Get a list of VMs across all dev boxes
+
+    my @vms = MT::Visage::Virtstats::get_vms();
+
+    foreach my $vm (@vms) {
+        if ( $vm->{running} ) {
+            print("%s is running on %s with ip %s\n", $vm->{name}, $vm->{host}, $vm->{ip});
+        }
+        else {
+            print("%s is shutoff on %s\n", $vm->{name}, $vm->{host});
+        }
+    }
+
+    ## Print stats on VMs
+
+    MT::Visage::Virtstats::print_perf_info(); # optionally,  print_perf_info( simple => 1 )
+
+    ## Get a sorted list of dev boxes, in order of best to least performing
+
+    my @sorted_hosts = MT::Visage::Virtstats::get_sorted_hosts();
+
+    my $i = 1;
+    printf(
+        "#%2d [%.2f] %s #vms: %2d (%.2f) load: %.2f (%.2f) ram: %d (%.2f)\n",
+        $i++,                                $_->{'_perfscore'}, $_->{'name'},
+        $_->{'num running domains'}, $_->{'num running domains_score'},
+        $_->{'load5min'},            $_->{'load5min_score'},
+        $_->{'free ram (mb)'},       $_->{'free ram (mb)_score'}
+    ) foreach (@sorted_hosts);
+
+=head1 AUTHOR
+
+(mt) Dev, C<< <dev at mediatemple.net> >>
+
+=head1 COPYRIGHT & LICENSE
+
+Copyright 2014 Media Temple, all rights reserved.
+
+=cut
+
+1;
