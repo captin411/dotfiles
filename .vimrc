@@ -5,6 +5,8 @@ set runtimepath^=~/.vim/bundle/ctrlp.vim
 set textwidth=156
 set backspace=indent,eol,start
 set bg=dark
+let g:solarized_termcolors=256
+let g:solarized_contrast="high"
 colorscheme solarized
 
 set tabstop=4
