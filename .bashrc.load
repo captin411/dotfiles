@@ -73,19 +73,16 @@ export EDITOR='vim'
 export GIT_EDITOR='vim'
 
 if [ "$(locale -a | grep 'en_US.utf8')" = 'en_US.utf8' ]; then
-    export LANG=en_US.UTF-8
-    export LC_ALL=en_US.UTF-8
-#    export LOCALE=UTF-8
+    export LANG=en_US.utf8
+    export LC_ALL=en_US.utf8
     export LESSCHARSET='utf-8'
 elif [ "$(locale -a  | grep 'en_US.UTF-8')" = 'en_US.UTF-8' ]; then
     export LANG=en_US.UTF-8
     export LC_ALL=en_US.UTF-8
-#    export LOCALE=UTF-8
     export LESSCHARSET='utf-8'
 else
     export LANG=en_US
     export LC_ALL=C
-#    export LOCALE=UTF-8
     export LESSCHARSET='utf-8'
 fi
 
