@@ -28,8 +28,11 @@ set statusline+=%{SyntasticStatuslineFlag()}
 set statusline+=%*
 
 set laststatus=2
-
 set mouse=a
+
+if !has('gui_running')
+    set t_Co=256
+endif
 
 let g:syntastic_always_populate_loc_list = 0
 let g:syntastic_auto_loc_list = 0
@@ -39,5 +42,11 @@ let g:syntastic_enable_perl_checker = 1
 let g:syntastic_perl_checkers = ["perl","python","puppet","javascript"]
 let g:syntastic_error_symbol = "✗"
 let g:syntastic_warning_symbol = "⚠"
+
+augroup CursorLine
+    au!
+    au VimEnter,WinEnter,BufWinEnter * setlocal cursorline
+    au WinLeave * setlocal nocursorline
+augroup END
 
 call pathogen#infect()
