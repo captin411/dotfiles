@@ -20,9 +20,10 @@ set number
 
 set matchpairs+=<:>
 
+let perl_fold = 1
+
 autocmd FileType perl call VimOptionsPerl()
 function! VimOptionsPerl()
-    let perl_fold = 1
     setlocal foldlevel=1
     setlocal shiftwidth=4
     setlocal tabstop=4
