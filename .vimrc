@@ -1,5 +1,7 @@
 syntax on
 
+set encoding=utf-8
+
 set runtimepath^=~/.vim/bundle/ctrlp.vim
 
 set textwidth=156
