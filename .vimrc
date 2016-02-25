@@ -65,6 +65,8 @@ let g:syntastic_perl_checkers = ["perl","python","puppet","javascript"]
 let g:syntastic_error_symbol = "✗"
 let g:syntastic_warning_symbol = "⚠"
 let g:syntastic_loc_list_height = 3
+let g:syntastic_mode_map = { 'mode': 'passive', 'active_filetypes': [],'passive_filetypes': [] }
+nnoremap <C-w>E :SyntasticCheck<CR> :SyntasticToggleMode<CR>
 
 augroup CursorLine
     au!
