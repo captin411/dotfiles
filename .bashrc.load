@@ -100,3 +100,23 @@ fi
 # don't table complete files starting with a .
 bind 'set match-hidden-files off' 
 
+if [ -e /usr/bin/open ]; then
+    function dash_doc_search() {
+        /usr/bin/open dash://$1
+    }
+    alias ?=dash_doc_search
+fi
+
+DOCKER_CMD=$(which docker)
+DOCKER_MACHINE_CMD=$(which docker-machine)
+
+if [ -e "$DOCKER_CMD" ]; then
+    # docker on OSX prep
+    if [ -e "$DOCKER_MACHINE_CMD" ]; then
+        ($DOCKER_MACHINE_CMD status default >/dev/null) || ($DOCKER_MACHINE_CMD start default >/dev/null)
+        if [ -z $DOCKER_MACHINE_HOST ]; then
+            eval $($DOCKER_MACHINE_CMD env default)
+        fi
+    fi
+fi
+
