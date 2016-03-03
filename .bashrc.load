@@ -118,5 +118,8 @@ if [ -e "$DOCKER_CMD" ]; then
             eval $($DOCKER_MACHINE_CMD env default)
         fi
     fi
+
+    alias ynab="docker run -v ~/DockerExport/ofxclient/conf:/export -v ~/DockerExport/ofxclient/secret:/root/.local/share/python_keyring -i -t captin411/ofxclient -d /export/download.ofx && /usr/bin/open $HOME/DockerExport/ofxclient/conf/download.ofx"
+
 fi
 
